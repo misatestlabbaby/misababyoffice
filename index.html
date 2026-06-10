@@ -65,7 +65,7 @@ const wb=new THREE.Mesh(new THREE.PlaneGeometry(20,10),new THREE.MeshLambertMate
 const wl=new THREE.Mesh(new THREE.PlaneGeometry(18,10),new THREE.MeshLambertMaterial({color:0x161616}));wl.position.set(-10,5,0);wl.rotation.y=Math.PI/2;scene.add(wl);
 function makeDesk(x,z,sc){
   const g=new THREE.Group();
-  g.add(Object.assign(new THREE.Mesh(new THREE.BoxGeometry(2.4,0.07,1.2),new THREE.MeshLambertMaterial({color:0x2a2a2a})),{position:new THREE.Vector3(0,0.8,0)}));
+  const top=new THREE.Mesh(new THREE.BoxGeometry(2.4,0.07,1.2),new THREE.MeshLambertMaterial({color:0x2a2a2a}));top.position.set(0,0.8,0);g.add(top);
   [[-1,-0.45],[1,-0.45],[-1,0.45],[1,0.45]].forEach(([lx,lz])=>{const leg=new THREE.Mesh(new THREE.BoxGeometry(0.06,0.77,0.06),new THREE.MeshLambertMaterial({color:0x3a3a3a}));leg.position.set(lx,0.39,lz);g.add(leg);});
   const cs=new THREE.Mesh(new THREE.BoxGeometry(0.8,0.08,0.7),new THREE.MeshLambertMaterial({color:0x222222}));cs.position.set(0,0.5,0.8);g.add(cs);
   const cb=new THREE.Mesh(new THREE.BoxGeometry(0.8,0.6,0.07),new THREE.MeshLambertMaterial({color:0x222222}));cb.position.set(0,0.82,1.12);g.add(cb);
@@ -101,7 +101,7 @@ const names=['Marvis','Research Agent','Code Agent','File Agent'];
 function setAgent(i,s,l){document.getElementById('dot-'+keys[i]).className='dot dot-'+s;document.getElementById('label-'+keys[i]).textContent=names[i]+' — '+l;}
 function addLog(txt){const el=document.getElementById('log-items');const d=document.createElement('div');d.className='log-item';const t=new Date().toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit',second:'2-digit'});d.textContent=t+' '+txt;if(el.children.length===1&&el.children[0].textContent==='等待任務...')el.innerHTML='';el.insertBefore(d,el.firstChild);if(el.children.length>6)el.removeChild(el.lastChild);}
 const demo=[{a:0,s:'thinking',l:'分析任務...',g:'🧠 Marvis 拆解任務'},{a:1,s:'working',l:'搜尋 arxiv...',g:'🔍 Research 搜尋論文'},{a:2,s:'working',l:'生成程式碼...',g:'💻 Code Agent 寫程式'},{a:3,s:'working',l:'儲存報告...',g:'📁 File Agent 存檔'},{a:1,s:'idle',l:'待機',g:'✓ Research 完成'},{a:2,s:'idle',l:'待機',g:'✓ Code 完成'},{a:3,s:'idle',l:'待機',g:'✓ File 完成'},{a:0,s:'working',l:'整合結果...',g:'⚡ Marvis 整合輸出'}];
-let running=false;
+var running=false;
 function startDemo(){if(running)return;running=true;keys.forEach((_,i)=>setAgent(i,'idle','待機'));document.getElementById('log-items').innerHTML='';addLog('🚀 任務開始');let i=0;function step(){if(i>=demo.length){setTimeout(()=>{keys.forEach((_,j)=>setAgent(j,'idle','完成 ✓'));addLog('🎉 所有任務完成');running=false;},800);return;}const task=demo[i];setAgent(task.a,task.s,task.l);addLog(task.g);const ag=agents[task.a];ag.position.y+=0.15;setTimeout(()=>ag.position.y=0.84,300);i++;setTimeout(step,1000);}step();}
 async function checkHermes(){const dot=document.getElementById('api-dot');const lbl=document.getElementById('api-label');dot.style.color='#f59e0b';lbl.textContent='連線中...';try{const r=await fetch('http://localhost:9119/api/status',{signal:AbortSignal.timeout(3000)});if(r.ok){dot.style.color='#10b981';lbl.textContent='已連線';addLog('✓ Hermes 連線成功');}else throw new Error();}catch{dot.style.color='#ef4444';lbl.textContent='未連線';addLog('⚠ 使用模擬模式');}}
 setTimeout(checkHermes,1000);
