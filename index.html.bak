@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Marvis 辦公室</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #0f0f0f; font-family: system-ui, sans-serif; color: #e5e5e5; overflow: hidden; }
+#canvas { width: 100vw; height: 100vh; display: block; cursor: grab; }
+#canvas:active { cursor: grabbing; }
+#title-bar { position: fixed; top: 16px; left: 20px; font-size: 13px; font-weight: 500; color: #888; letter-spacing: 0.1em; text-transform: uppercase; }
+#task-log { position: fixed; top: 16px; right: 16px; background: rgba(20,20,20,0.85); border: 0.5px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 12px 16px; font-size: 11px; color: #888; width: 220px; backdrop-filter: blur(8px); }
+#task-log .log-title { font-size: 10px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 8px; color: #555; }
+#task-log .log-item { padding: 3px 0; border-bottom: 0.5px solid rgba(255,255,255,0.06); margin-bottom: 3px; color: #aaa; }
+#task-log .log-item:last-child { border-bottom: none; margin-bottom: 0; }
+#status-bar { position: fixed; bottom: 16px; left: 16px; display: flex; gap: 8px; flex-wrap: wrap; }
+.agent-badge { font-size: 11px; padding: 5px 12px; border-radius: 20px; border: 0.5px solid rgba(255,255,255,0.1); background: rgba(20,20,20,0.85); color: #aaa; display: flex; align-items: center; gap: 6px; backdrop-filter: blur(8px); }
+.dot { width: 6px; height: 6px; border-radius: 50%; }
+.dot-idle { background: #444; }
+.dot-thinking { background: #f59e0b; animation: pulse 1s infinite; }
+.dot-working { background: #10b981; animation: pulse 0.6s infinite; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+#controls { position: fixed; bottom: 16px; right: 16px; display: flex; flex-direction: column; gap: 6px; }
+.ctrl-btn { background: rgba(20,20,20,0.85); border: 0.5px solid rgba(255,255,255,0.15); border-radius: 8px; padding: 7px 16px; font-size: 12px; cursor: pointer; color: #ccc; backdrop-filter: blur(8px); transition: background 0.15s; }
+.ctrl-btn:hover { background: rgba(50,50,50,0.9); }
+#api-status { position: fixed; top: 16px; left: 50%; transform: translateX(-50%); font-size: 11px; color: #555; background: rgba(20,20,20,0.7); border: 0.5px solid rgba(255,255,255,0.08); border-radius: 20px; padding: 4px 14px; backdrop-filter: blur(8px); }
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+<div id="title-bar">Marvis 辦公室</div>
+<div id="api-status"><span id="api-dot">●</span> Hermes — <span id="api-label">連線中...</span></div>
+<div id="task-log">
+  <div class="log-title">任務記錄</div>
+  <div id="log-items"><div class="log-item">等待任務...</div></div>
+</div>
+<div id="status-bar">
+  <div class="agent-badge"><div class="dot dot-idle" id="dot-marvis"></div><span id="label-marvis">Marvis — 待機</span></div>
+  <div class="agent-badge"><div class="dot dot-idle" id="dot-research"></div><span id="label-research">Research — 待機</span></div>
+  <div class="agent-badge"><div class="dot dot-idle" id="dot-code"></div><span id="label-code">Code — 待機</span></div>
+  <div class="agent-badge"><div class="dot dot-idle" id="dot-file"></div><span id="label-file">File — 待機</span></div>
+</div>
+<div id="controls">
+  <button class="ctrl-btn" onclick="startDemo()">▶ 模擬任務</button>
+  <button class="ctrl-btn" onclick="checkHermes()">⟳ 連線 Hermes</button>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+const canvas=document.getElementById('canvas');
+const renderer=new THREE.WebGLRenderer({canvas,antialias:true});
+renderer.setSize(window.innerWidth,window.innerHeight);
+renderer.shadowMap.enabled=true;
+renderer.setClearColor(0x0f0f0f,1);
+window.addEventListener('resize',()=>{renderer.setSize(window.innerWidth,window.innerHeight);camera.aspect=window.innerWidth/window.innerHeight;camera.updateProjectionMatrix();});
+const scene=new THREE.Scene();
+scene.fog=new THREE.Fog(0x0f0f0f,18,30);
+const camera=new THREE.PerspectiveCamera(45,window.innerWidth/window.innerHeight,0.1,100);
+camera.position.set(0,8,14);camera.lookAt(0,0,0);
+scene.add(new THREE.AmbientLight(0xffffff,0.4));
+const dl=new THREE.DirectionalLight(0xffffff,0.7);dl.position.set(5,12,5);dl.castShadow=true;scene.add(dl);
+const pl=new THREE.PointLight(0x8b9fff,0.5,20);pl.position.set(0,6,0);scene.add(pl);
+const floor=new THREE.Mesh(new THREE.PlaneGeometry(20,18),new THREE.MeshLambertMaterial({color:0x1a1a1a}));floor.rotation.x=-Math.PI/2;floor.receiveShadow=true;scene.add(floor);
+const wb=new THREE.Mesh(new THREE.PlaneGeometry(20,10),new THREE.MeshLambertMaterial({color:0x161616}));wb.position.set(0,5,-9);scene.add(wb);
+const wl=new THREE.Mesh(new THREE.PlaneGeometry(18,10),new THREE.MeshLambertMaterial({color:0x161616}));wl.position.set(-10,5,0);wl.rotation.y=Math.PI/2;scene.add(wl);
+function makeDesk(x,z,sc){
+  const g=new THREE.Group();
+  const top=new THREE.Mesh(new THREE.BoxGeometry(2.4,0.07,1.2),new THREE.MeshLambertMaterial({color:0x2a2a2a}));top.position.set(0,0.8,0);g.add(top);
+  [[-1,-0.45],[1,-0.45],[-1,0.45],[1,0.45]].forEach(([lx,lz])=>{const leg=new THREE.Mesh(new THREE.BoxGeometry(0.06,0.77,0.06),new THREE.MeshLambertMaterial({color:0x3a3a3a}));leg.position.set(lx,0.39,lz);g.add(leg);});
+  const cs=new THREE.Mesh(new THREE.BoxGeometry(0.8,0.08,0.7),new THREE.MeshLambertMaterial({color:0x222222}));cs.position.set(0,0.5,0.8);g.add(cs);
+  const cb=new THREE.Mesh(new THREE.BoxGeometry(0.8,0.6,0.07),new THREE.MeshLambertMaterial({color:0x222222}));cb.position.set(0,0.82,1.12);g.add(cb);
+  const mon=new THREE.Mesh(new THREE.BoxGeometry(1.2,0.72,0.06),new THREE.MeshLambertMaterial({color:0x111111}));mon.position.set(0,1.32,-0.38);g.add(mon);
+  const scr=new THREE.Mesh(new THREE.BoxGeometry(1.05,0.58,0.015),new THREE.MeshLambertMaterial({color:sc,emissive:sc,emissiveIntensity:0.6}));scr.position.set(0,1.32,-0.35);g.add(scr);
+  const st=new THREE.Mesh(new THREE.BoxGeometry(0.07,0.22,0.07),new THREE.MeshLambertMaterial({color:0x111111}));st.position.set(0,0.92,-0.38);g.add(st);
+  g.position.set(x,0,z);g.userData.screen=scr;return g;
+}
+function makeAgent(bc){
+  const g=new THREE.Group();
+  const body=new THREE.Mesh(new THREE.BoxGeometry(0.32,0.42,0.22),new THREE.MeshLambertMaterial({color:0x111111}));body.position.y=0.21;g.add(body);
+  const head=new THREE.Mesh(new THREE.BoxGeometry(0.3,0.3,0.26),new THREE.MeshLambertMaterial({color:0x111111}));head.position.y=0.56;g.add(head);
+  [-0.07,0.07].forEach(ex=>{const eye=new THREE.Mesh(new THREE.BoxGeometry(0.05,0.05,0.02),new THREE.MeshLambertMaterial({color:0xffff00,emissive:0xffff00,emissiveIntensity:0.8}));eye.position.set(ex,0.58,0.13);g.add(eye);});
+  const belt=new THREE.Mesh(new THREE.BoxGeometry(0.34,0.07,0.24),new THREE.MeshLambertMaterial({color:bc,emissive:bc,emissiveIntensity:0.3}));belt.position.y=0.27;g.add(belt);
+  return g;
+}
+const cfgs=[{x:-2.8,z:-2.5,sc:0x1a6fff,bc:0xef4444},{x:2.8,z:-2.5,sc:0x10b981,bc:0xf59e0b},{x:-2.8,z:1.5,sc:0xf59e0b,bc:0x3b82f6},{x:2.8,z:1.5,sc:0x8b5cf6,bc:0x8b5cf6}];
+const desks=[],agents=[];
+cfgs.forEach(c=>{const d=makeDesk(c.x,c.z,c.sc);scene.add(d);desks.push(d);const a=makeAgent(c.bc);a.position.set(c.x,0.84,c.z+0.25);scene.add(a);agents.push(a);});
+[[-2.8,5.5],[2.8,5.5]].forEach(([x,z])=>scene.add(makeDesk(x,z,0x1a1a1a)));
+let rotY=0.25,rotX=0.35,drag=false,lx=0,ly=0;
+canvas.addEventListener('mousedown',e=>{drag=true;lx=e.clientX;ly=e.clientY;});
+window.addEventListener('mouseup',()=>drag=false);
+window.addEventListener('mousemove',e=>{if(!drag)return;rotY+=(e.clientX-lx)*0.004;rotX+=(e.clientY-ly)*0.003;rotX=Math.max(0.1,Math.min(0.75,rotX));lx=e.clientX;ly=e.clientY;});
+canvas.addEventListener('touchstart',e=>{drag=true;lx=e.touches[0].clientX;ly=e.touches[0].clientY;});
+canvas.addEventListener('touchend',()=>drag=false);
+canvas.addEventListener('touchmove',e=>{if(!drag)return;rotY+=(e.touches[0].clientX-lx)*0.004;rotX+=(e.touches[0].clientY-ly)*0.003;rotX=Math.max(0.1,Math.min(0.75,rotX));lx=e.touches[0].clientX;ly=e.touches[0].clientY;});
+let t=0;
+function animate(){requestAnimationFrame(animate);t+=0.016;const r=16;camera.position.x=Math.sin(rotY)*r*Math.cos(rotX);camera.position.z=Math.cos(rotY)*r*Math.cos(rotX);camera.position.y=r*Math.sin(rotX)+1.5;camera.lookAt(0,1.2,0);agents.forEach((a,i)=>a.position.y=0.84+Math.sin(t*0.7+i*1.2)*0.015);desks.forEach((d,i)=>{if(d.userData.screen)d.userData.screen.material.emissiveIntensity=0.4+Math.sin(t*1.2+i)*0.2;});renderer.render(scene,camera);}
+animate();
+const keys=['marvis','research','code','file'];
+const names=['Marvis','Research Agent','Code Agent','File Agent'];
+function setAgent(i,s,l){document.getElementById('dot-'+keys[i]).className='dot dot-'+s;document.getElementById('label-'+keys[i]).textContent=names[i]+' — '+l;}
+function addLog(txt){const el=document.getElementById('log-items');const d=document.createElement('div');d.className='log-item';const t=new Date().toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit',second:'2-digit'});d.textContent=t+' '+txt;if(el.children.length===1&&el.children[0].textContent==='等待任務...')el.innerHTML='';el.insertBefore(d,el.firstChild);if(el.children.length>6)el.removeChild(el.lastChild);}
+const demo=[{a:0,s:'thinking',l:'分析任務...',g:'🧠 Marvis 拆解任務'},{a:1,s:'working',l:'搜尋 arxiv...',g:'🔍 Research 搜尋論文'},{a:2,s:'working',l:'生成程式碼...',g:'💻 Code Agent 寫程式'},{a:3,s:'working',l:'儲存報告...',g:'📁 File Agent 存檔'},{a:1,s:'idle',l:'待機',g:'✓ Research 完成'},{a:2,s:'idle',l:'待機',g:'✓ Code 完成'},{a:3,s:'idle',l:'待機',g:'✓ File 完成'},{a:0,s:'working',l:'整合結果...',g:'⚡ Marvis 整合輸出'}];
+var running=false;
+function startDemo(){if(running)return;running=true;keys.forEach((_,i)=>setAgent(i,'idle','待機'));document.getElementById('log-items').innerHTML='';addLog('🚀 任務開始');let i=0;function step(){if(i>=demo.length){setTimeout(()=>{keys.forEach((_,j)=>setAgent(j,'idle','完成 ✓'));addLog('🎉 所有任務完成');running=false;},800);return;}const task=demo[i];setAgent(task.a,task.s,task.l);addLog(task.g);const ag=agents[task.a];ag.position.y+=0.15;setTimeout(()=>ag.position.y=0.84,300);i++;setTimeout(step,1000);}step();}
+async function checkHermes(){const dot=document.getElementById('api-dot');const lbl=document.getElementById('api-label');dot.style.color='#f59e0b';lbl.textContent='連線中...';try{const r=await fetch('http://localhost:9119/api/status',{signal:AbortSignal.timeout(3000)});if(r.ok){dot.style.color='#10b981';lbl.textContent='已連線';addLog('✓ Hermes 連線成功');}else throw new Error();}catch{dot.style.color='#ef4444';lbl.textContent='未連線';addLog('⚠ 使用模擬模式');}}
+setTimeout(checkHermes,1000);
+</script>
+</body>
+</html>
